@@ -109,6 +109,9 @@ Example Detection Logic (SPL):
                       risk_score < 30, "Low")
     | where risk_score > 0
 
+The full detection logic, including relationship modeling and risk aggregation, is available in:
+
+`/detections/internal_phishing_behavioral_detection.spl`
 
 Key Takeaways
 
