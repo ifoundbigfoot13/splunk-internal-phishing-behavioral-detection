@@ -1,12 +1,12 @@
 # splunk-internal-phishing-behavioral-detection
 
-Behavioral Internal Phishing Detection in Splunk Overview
+## Behavioral Internal Phishing Detection in Splunk Overview
 
 This project demonstrates the design and implementation of a behavioral anomaly detection framework in Splunk to identify internal-to-internal phishing activity conducted through compromised accounts.
 
 Traditional email security controls primarily focus on external threats. When an adversary compromises a legitimate internal account, malicious emails can originate from trusted identities and bypass perimeter-based detection mechanisms. This project addresses that detection gap using statistical/behavioral baselining and risk-based alert aggregation within Splunk.
 
-Problem Statement
+### Problem Statement
 
 Internal phishing campaigns leveraging valid accounts are difficult to detect because:
 
@@ -20,7 +20,7 @@ Internal phishing campaigns leveraging valid accounts are difficult to detect be
 
 The objective was to design a behavioral detection model capable of identifying abnormal internal email patterns while maintaining operational feasibility and minimizing false positives.
 
-Dataset
+### Dataset
 
 -  350 synthetic internal email events
 
@@ -30,9 +30,9 @@ Dataset
 
 -  Fields normalized to Splunk Common Information Model (CIM)
 
-Detection Architecture
+### Detection Architecture
 
-  1️⃣ Behavioral Baselining
+  #### 1️⃣ Behavioral Baselining
 
   -  Hourly binning by sender
 
@@ -44,7 +44,7 @@ Detection Architecture
 
   This approach allows dynamic modeling of normal behavior rather than static rule thresholds.
 
-  2️⃣ Behavioral Enrichment Conditions
+  #### 2️⃣ Behavioral Enrichment Conditions
 
   In addition to volume spike detection, two enrichment indicators were incorporated:
 
@@ -54,7 +54,7 @@ Detection Architecture
 
   These conditions improve detection fidelity beyond simple volume-based alerts.
 
-  3️⃣ Risk Scoring Model
+  #### 3️⃣ Risk Scoring Model
 
   Weighted additive scoring:
 
@@ -74,7 +74,15 @@ Detection Architecture
 
   This structure aligns with risk-based alerting principles and reduces alert fatigue by prioritizing composite behavioral anomalies.
 
-Validation Results
+### Relationship Modeling (Baseline Lookup)
+
+New sender-to-recipient relationships are identified by comparing hourly communication pairs against a baseline lookup table derived from normal activity.
+
+If a sender communicates with recipients not present in the baseline model, those relationships are treated as anomalous and contribute to the composite risk score.
+
+See `/docs/lookup_setup.md` for full lookup creation and configuration steps.
+
+### Validation Results
 
 -  3 simulated phishing attack windows
 
@@ -86,7 +94,7 @@ Overall detection rate: 66.67% (Minimal false positives during baseline activity
 
 The missed detection highlights the tradeoff between sensitivity and alert stability inherent in statistical anomaly detection models. The decision was made not to overtune thresholds to preserve operational feasibility.
 
-Artifacts
+### Artifacts
 
 -  SPL correlation search
 
@@ -94,7 +102,7 @@ Artifacts
 
 -  Investigation dashboard (Internal Email Anomaly View)
 
-Example Detection Logic (SPL):
+### Example Detection Logic (SPL):
 
     index=internal_email sourcetype=email_logs
     | bin _time span=1h
@@ -113,7 +121,7 @@ The full detection logic, including relationship modeling and risk aggregation, 
 
 `/detections/internal_phishing_behavioral_detection.spl`
 
-Key Takeaways
+### Key Takeaways
 
 -  Statistical baselining is effective for detecting behavioral anomalies
 
@@ -125,7 +133,7 @@ Key Takeaways
 
 -  Detection engineering requires data normalization and validation before rule development
 
-Future Enhancements
+### Future Enhancements
 
 -  Z-score normalization
 
@@ -139,7 +147,7 @@ Future Enhancements
 
 -  Expansion to include link analysis and attachment metadata
 
-Skills Demonstrated
+### Skills Demonstrated
 
 -  Splunk SPL development
 
@@ -155,7 +163,7 @@ Skills Demonstrated
 
 -  Alert validation & performance evaluation
 
-Intended Audience
+### Intended Audience
 
 This project is relevant for:
 
