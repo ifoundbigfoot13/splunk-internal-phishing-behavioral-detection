@@ -1,176 +1,152 @@
-# splunk-internal-phishing-behavioral-detection
+# Behavioral Internal Phishing Detection in Splunk
 
-## Behavioral Internal Phishing Detection in Splunk Overview
+## Overview
 
-This project demonstrates the design and implementation of a behavioral anomaly detection framework in Splunk to identify internal-to-internal phishing activity conducted through compromised accounts.
+This project demonstrates the design and validation of a behavioral anomaly detection framework in Splunk to identify internal-to-internal phishing activity originating from compromised accounts.
 
-Traditional email security controls primarily focus on external threats. When an adversary compromises a legitimate internal account, malicious emails can originate from trusted identities and bypass perimeter-based detection mechanisms. This project addresses that detection gap using statistical/behavioral baselining and risk-based alert aggregation within Splunk.
+Traditional email security tools primarily focus on blocking external threats. When an attacker compromises a legitimate internal account, malicious emails can originate from trusted identities and bypass perimeter-based detection mechanisms. This project addresses that detection gap using statistical baselining, behavioral enrichment, and risk-based alert aggregation within Splunk.
 
-### Problem Statement
+---
 
-Internal phishing campaigns leveraging valid accounts are difficult to detect because:
+## Problem Statement
 
--  Email originates from legitimate users
+Internal phishing campaigns leveraging valid credentials are difficult to detect because:
 
--  No obvious malicious domain indicators
+- Email originates from legitimate users
+- No obvious malicious domains or external indicators
+- Activity blends into normal communication patterns
+- Static IOC-based detections may not trigger
 
--  Traditional IOC-based detections may not trigger
+The objective was to build a behavioral detection model capable of identifying anomalous internal communication while maintaining operational stability and minimizing false positives.
 
--  Activity blends into normal communication patterns
+---
 
-The objective was to design a behavioral detection model capable of identifying abnormal internal email patterns while maintaining operational feasibility and minimizing false positives.
+## Detection Architecture
 
-### Dataset
+### 1. Hourly Behavioral Baselining
 
--  350 synthetic internal email events
+- Sender-specific hourly aggregation
+- Statistical threshold defined as:
 
--  Baseline normal internal communication activity
 
--  3 injected simulated phishing attack windows
+threshold = average(hourly_count) + (2 × standard deviation)
 
--  Fields normalized to Splunk Common Information Model (CIM)
 
-### Detection Architecture
+This dynamic approach adapts to each sender’s normal communication pattern rather than relying on fixed volume thresholds.
 
-  #### 1️⃣ Behavioral Baselining
+---
 
-  -  Hourly binning by sender
+### 2. Behavioral Enrichment Conditions
 
-  -  Sender-specific statistical baseline
+In addition to statistical spike detection, two enrichment signals are incorporated:
 
-  Threshold defined as:
+- **Unique recipients ≥ 4** within one hour  
+- **New sender-to-recipient relationships ≥ 3** within one hour  
 
-    Threshold = average hourly volume + (2 × standard deviation)
+New relationships are identified by comparing hourly communication pairs against a baseline lookup derived from normal activity.
 
-  This approach allows dynamic modeling of normal behavior rather than static rule thresholds.
+See `/docs/lookup_setup.md` for full lookup configuration details.
 
-  #### 2️⃣ Behavioral Enrichment Conditions
+---
 
-  In addition to volume spike detection, two enrichment indicators were incorporated:
+### 3. Risk-Based Alerting Model
 
-  -  ≥ 4 unique recipients within one hour
+Weighted additive scoring:
 
-  -  ≥ 3 new sender-recipient relationships within one hour
+| Indicator | Condition | Weight |
+|------------|-----------|--------|
+| Volume spike | Hourly count > threshold | +30 |
+| Unique recipients | ≥ 4 | +20 |
+| New relationships | ≥ 3 | +25 |
 
-  These conditions improve detection fidelity beyond simple volume-based alerts.
+Severity tiers:
 
-  #### 3️⃣ Risk Scoring Model
+- Low: 0–29  
+- Medium: 30–49  
+- High: 50+  
 
-  Weighted additive scoring:
+Alerts are generated only when cumulative risk exceeds defined thresholds to reduce alert fatigue.
 
-  | Behavioral Indicator | Condition                         | Weight |
-  | -------------------- | --------------------------------- | ------ |
-  | Volume spike         | Hourly count > baseline threshold | +30    |
-  | Unique recipients    | ≥ 4                               | +20    |
-  | New relationships    | ≥ 3                               | +25    |
+---
 
-  Severity Levels:
+## Validation Results
 
-  -  Low: 0–29
+The detection model was evaluated using a synthetic internal email dataset containing controlled phishing simulations.
 
-  -  Medium: 30–49
+- Total events: 350  
+- Simulated attack windows: 3  
+- Successfully detected: 2  
+- Detection rate: **66.67%**  
+- Minimal false positives during baseline activity  
 
-  -  High: 50+
+One low-volume attack did not exceed the statistical threshold. The model was intentionally not overtuned to preserve operational stability and prevent alert instability.
 
-  This structure aligns with risk-based alerting principles and reduces alert fatigue by prioritizing composite behavioral anomalies.
+Full validation details are available in:
 
-### Relationship Modeling (Baseline Lookup)
+`/docs/validation_results.md`
 
-New sender-to-recipient relationships are identified by comparing hourly communication pairs against a baseline lookup table derived from normal activity.
+---
 
-If a sender communicates with recipients not present in the baseline model, those relationships are treated as anomalous and contribute to the composite risk score.
+## Investigation Dashboard
 
-See `/docs/lookup_setup.md` for full lookup creation and configuration steps.
+An investigation dashboard was developed to support SOC triage and contextual review of behavioral alerts. The dashboard provides:
 
-### Validation Results
+- Hourly sender volume vs threshold
+- Unique recipient counts
+- New relationship counts
+- Risk score and severity
+- Recipient distribution analysis
 
--  3 simulated phishing attack windows
+See `/docs/dashboard_overview.md` for dashboard structure and workflow.
 
--  2 successfully detected
+---
 
--  1 low-volume scenario remained below statistical threshold
+## Repository Structure
 
-Overall detection rate: 66.67% (Minimal false positives during baseline activity)
 
-The missed detection highlights the tradeoff between sensitivity and alert stability inherent in statistical anomaly detection models. The decision was made not to overtune thresholds to preserve operational feasibility.
+detections/
+internal_phishing_behavioral_detection.spl
 
-### Artifacts
+docs/
+lookup_setup.md
+dashboard_overview.md
+validation_results.md
 
--  SPL correlation search
+lookups/
+sender_recipient_baseline.csv
 
--  Risk scoring model
+images/
+dashboard.png
 
--  Investigation dashboard (Internal Email Anomaly View)
-   -  A screenshot of the dashboard is available in `/images/dashboard.png`.
 
+---
 
-### Example Detection Logic (SPL):
+## Key Takeaways
 
-    index=internal_email sourcetype=email_logs
-    | bin _time span=1h
-    | stats count AS hourly_count dc(recipient) AS unique_recipients BY sender _time
-    | eventstats avg(hourly_count) AS avg_count stdev(hourly_count) AS stdev_count BY sender
-    | eval threshold = avg_count + (2 * stdev_count)
-    | eval risk_score = 0
-    | eval risk_score = risk_score + if(hourly_count > threshold, 30, 0)
-    | eval risk_score = risk_score + if(unique_recipients >= 4, 20, 0)
-    | eval severity = case(risk_score >= 50, "High",
-                      risk_score >= 30, "Medium",
-                      risk_score < 30, "Low")
-    | where risk_score > 0
+- Statistical baselining improves detection of compromised internal accounts
+- Composite risk scoring reduces single-condition alert noise
+- Behavioral modeling complements traditional email filtering
+- Detection tuning requires balancing sensitivity with operational stability
+- Validation is essential before deployment into production environments
 
-The full detection logic, including relationship modeling and risk aggregation, is available in:
+---
 
-`/detections/internal_phishing_behavioral_detection.spl`
+## Skills Demonstrated
 
-### Key Takeaways
+- Splunk SPL development
+- Statistical anomaly modeling
+- Lookup-driven relationship analysis
+- Risk-based alerting
+- Detection validation methodology
+- SOC workflow design
+- SIEM-based behavioral analytics
 
--  Statistical baselining is effective for detecting behavioral anomalies
+---
 
--  Composite risk scoring improves prioritization
+## Future Enhancements
 
--  Detection sensitivity must be balanced against false positive rates
-
--  Behavioral analytics can be implemented within existing SIEM infrastructure
-
--  Detection engineering requires data normalization and validation before rule development
-
-### Future Enhancements
-
--  Z-score normalization
-
--  Time-of-day baselining
-
--  Role-based sender modeling
-
--  Adaptive thresholding
-
--  SOAR integration for automated containment
-
--  Expansion to include link analysis and attachment metadata
-
-### Skills Demonstrated
-
--  Splunk SPL development
-
--  Behavioral anomaly modeling
-
--  Statistical thresholding
-
--  Risk-based alerting
-
--  Detection engineering workflow
-
--  Data normalization (CIM alignment)
-
--  Alert validation & performance evaluation
-
-### Intended Audience
-
-This project is relevant for:
-
--  SOC teams seeking behavioral detection strategies
-
--  Detection engineers building anomaly-based models
-
--  Security engineers implementing risk-based alerting in SIEM platforms
+- Time-of-day behavioral modeling
+- Z-score normalization
+- Role-based sender segmentation
+- Adaptive thresholding
+- SOAR integration for automated containment
