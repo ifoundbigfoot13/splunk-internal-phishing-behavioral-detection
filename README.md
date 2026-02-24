@@ -1,7 +1,6 @@
 # splunk-internal-phishing-behavioral-detection
 
-Behavioral Internal Phishing Detection in Splunk
-Overview
+Behavioral Internal Phishing Detection in Splunk Overview
 
 This project demonstrates the design and implementation of a behavioral anomaly detection framework in Splunk to identify internal-to-internal phishing activity conducted through compromised accounts.
 
@@ -33,49 +32,47 @@ Dataset
 
 Detection Architecture
 
-1️⃣ Behavioral Baselining
+  1️⃣ Behavioral Baselining
 
--  Hourly binning by sender
+  -  Hourly binning by sender
 
--  Sender-specific statistical baseline
+  -  Sender-specific statistical baseline
 
-Threshold defined as:
+  Threshold defined as:
 
--  Threshold = average hourly volume + (2 × standard deviation)
+    Threshold = average hourly volume + (2 × standard deviation)
 
-This approach allows dynamic modeling of normal behavior rather than static rule thresholds.
+  This approach allows dynamic modeling of normal behavior rather than static rule thresholds.
 
-2️⃣ Behavioral Enrichment Conditions
+  2️⃣ Behavioral Enrichment Conditions
 
-In addition to volume spike detection, two enrichment indicators were incorporated:
+  In addition to volume spike detection, two enrichment indicators were incorporated:
 
--  ≥ 4 unique recipients within one hour
+  -  ≥ 4 unique recipients within one hour
 
--  ≥ 3 new sender-recipient relationships within one hour
+  -  ≥ 3 new sender-recipient relationships within one hour
 
-These conditions improve detection fidelity beyond simple volume-based alerts.
+  These conditions improve detection fidelity beyond simple volume-based alerts.
 
-3️⃣ Risk Scoring Model
+  3️⃣ Risk Scoring Model
 
-Weighted additive scoring:
+  Weighted additive scoring:
 
-Behavioral Indicator/	    Condition/	                          Weight
+  | Behavioral Indicator | Condition                         | Weight |
+  | -------------------- | --------------------------------- | ------ |
+  | Volume spike         | Hourly count > baseline threshold | +30    |
+  | Unique recipients    | ≥ 4                               | +20    |
+  | New relationships    | ≥ 3                               | +25    |
 
-Volume spike/	            Hourly count > baseline threshold/	  +30
+  Severity Levels:
 
-Unique recipients/	        ≥ 4/	                                +20
+  -  Low: 0–29
 
-New relationships/	        ≥ 3/	                                +25
+  -  Medium: 30–49
 
-Severity Levels:
+  -  High: 50+
 
-Low: 0–29
-
-Medium: 30–49
-
-High: 50+
-
-This structure aligns with risk-based alerting principles and reduces alert fatigue by prioritizing composite behavioral anomalies.
+  This structure aligns with risk-based alerting principles and reduces alert fatigue by prioritizing composite behavioral anomalies.
 
 Validation Results
 
@@ -99,27 +96,18 @@ Artifacts
 
 Example Detection Logic (SPL):
 
-index=internal_email sourcetype=email_logs
-
-| bin _time span=1h
-
-| stats count AS hourly_count dc(recipient) AS unique_recipients BY sender _time
-
-| eventstats avg(hourly_count) AS avg_count stdev(hourly_count) AS stdev_count BY sender
-
-| eval threshold = avg_count + (2 * stdev_count)
-
-| eval risk_score = 0
-
-| eval risk_score = risk_score + if(hourly_count > threshold, 30, 0)
-
-| eval risk_score = risk_score + if(unique_recipients >= 4, 20, 0)
-
-| eval severity = case(risk_score >= 50, "High",
+    index=internal_email sourcetype=email_logs
+    | bin _time span=1h
+    | stats count AS hourly_count dc(recipient) AS unique_recipients BY sender _time
+    | eventstats avg(hourly_count) AS avg_count stdev(hourly_count) AS stdev_count BY sender
+    | eval threshold = avg_count + (2 * stdev_count)
+    | eval risk_score = 0
+    | eval risk_score = risk_score + if(hourly_count > threshold, 30, 0)
+    | eval risk_score = risk_score + if(unique_recipients >= 4, 20, 0)
+    | eval severity = case(risk_score >= 50, "High",
                       risk_score >= 30, "Medium",
                       risk_score < 30, "Low")
-
-| where risk_score > 0
+    | where risk_score > 0
 
 
 Key Takeaways
