@@ -1,17 +1,42 @@
+# Internal Behavioral Phishing Detection - Splunk SPL
+# Hourly sender baselining with risk-based alert scoring
+
 index=internal_email sourcetype=email_logs
+
+# Aggregate activity hourly per sender
 | bin _time span=1h
-| stats count AS hourly_count dc(recipient) AS unique_recipients values(recipient) AS recipient_list BY sender _time
-| eventstats avg(hourly_count) AS avg_count stdev(hourly_count) AS stdev_count BY sender
+| stats count AS hourly_count 
+        dc(recipient) AS unique_recipients 
+        values(recipient) AS recipient_list 
+        BY sender _time
+
+# Calculate statistical baseline per sender
+| eventstats avg(hourly_count) AS avg_count 
+            stdev(hourly_count) AS stdev_count 
+            BY sender
+
+# Define anomaly threshold
 | eval threshold = avg_count + (2 * stdev_count)
+
+# Identify new sender-recipient relationships
 | lookup sender_recipient_baseline sender recipient OUTPUT is_new_relationship
 | eval new_relationship_flag = if(isnull(is_new_relationship), 1, 0)
-| stats sum(new_relationship_flag) AS new_relationships BY sender _time hourly_count unique_recipients threshold
+| stats sum(new_relationship_flag) AS new_relationships 
+        BY sender _time hourly_count unique_recipients threshold
+
+# Initialize risk score
 | eval risk_score = 0
+
+# Apply weighted behavioral indicators
 | eval risk_score = risk_score + if(hourly_count > threshold, 30, 0)
 | eval risk_score = risk_score + if(unique_recipients >= 4, 20, 0)
 | eval risk_score = risk_score + if(new_relationships >= 3, 25, 0)
+
+# Assign severity levels
 | eval severity = case(risk_score >= 50, "High",
                       risk_score >= 30, "Medium",
                       risk_score < 30, "Low")
+
+# Only display anomalous results
 | where risk_score > 0
 | table _time sender hourly_count threshold unique_recipients new_relationships risk_score severity
