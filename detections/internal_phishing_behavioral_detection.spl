@@ -1,42 +1,62 @@
-# Internal Behavioral Phishing Detection - Splunk SPL
-# Hourly sender baselining with risk-based alert scoring
+# Behavioral Internal Phishing Detection - Splunk SPL
+# Goal: Detect internal-to-internal phishing behavior from compromised accounts
+# Method:
+#   - Hourly sender aggregation (bin 1h)
+#   - Sender-specific statistical baseline (avg + 2*stdev)
+#   - Behavioral enrichments:
+#       * Unique recipients >= 4 (per hour)
+#       * New sender->recipient relationships >= 3 (per hour)
+#   - Weighted risk scoring with severity tiers
+#
+# IMPORTANT:
+#   The lookup "sender_recipient_baseline" must be built from BASELINE-ONLY (normal) data.
+#   If the baseline lookup is generated from the full dataset (including attack windows),
+#   then "new_relationships" will likely be 0 because all pairs are already "known."
 
-index=internal_email sourcetype=email_logs
+index=internal_email sourcetype=internal_email_live
 
-# Aggregate activity hourly per sender
+# 1) Aggregate per sender in hourly windows
 | bin _time span=1h
-| stats count AS hourly_count 
-        dc(recipient) AS unique_recipients 
-        values(recipient) AS recipient_list 
+| stats count AS hourly_count
+        dc(recipient) AS unique_recipients
+        values(recipient) AS recipients
         BY sender _time
 
-# Calculate statistical baseline per sender
-| eventstats avg(hourly_count) AS avg_count 
-            stdev(hourly_count) AS stdev_count 
+# 2) Sender-specific statistical baseline (avg + 2*stdev)
+| eventstats avg(hourly_count) AS avg_count
+            stdev(hourly_count) AS stdev_count
             BY sender
-
-# Define anomaly threshold
 | eval threshold = avg_count + (2 * stdev_count)
 
-# Identify new sender-recipient relationships
-| lookup sender_recipient_baseline sender recipient OUTPUT is_new_relationship
-| eval new_relationship_flag = if(isnull(is_new_relationship), 1, 0)
-| stats sum(new_relationship_flag) AS new_relationships 
-        BY sender _time hourly_count unique_recipients threshold
+# 3) New relationship detection via baseline lookup
+#    - Expand recipients to individual sender/recipient pairs
+#    - Lookup against known baseline relationships
+| mvexpand recipients
+| rename recipients AS recipient
+| lookup sender_recipient_baseline sender recipient OUTPUT sender AS matched_sender
+| eval is_new_relationship = if(isnull(matched_sender), 1, 0)
 
-# Initialize risk score
+# 4) Re-aggregate to hourly level after mvexpand
+| stats max(hourly_count) AS hourly_count
+        max(unique_recipients) AS unique_recipients
+        max(threshold) AS threshold
+        sum(is_new_relationship) AS new_relationships
+        BY sender _time
+
+# 5) Weighted risk scoring model
 | eval risk_score = 0
-
-# Apply weighted behavioral indicators
 | eval risk_score = risk_score + if(hourly_count > threshold, 30, 0)
 | eval risk_score = risk_score + if(unique_recipients >= 4, 20, 0)
 | eval risk_score = risk_score + if(new_relationships >= 3, 25, 0)
 
-# Assign severity levels
-| eval severity = case(risk_score >= 50, "High",
-                      risk_score >= 30, "Medium",
-                      risk_score < 30, "Low")
+# 6) Severity tiers (tune ranges as needed)
+| eval severity = case(
+    risk_score >= 50, "High",
+    risk_score >= 30, "Medium",
+    risk_score < 30, "Low"
+  )
 
-# Only display anomalous results
+# 7) Output only anomalies
 | where risk_score > 0
 | table _time sender hourly_count threshold unique_recipients new_relationships risk_score severity
+| sort - risk_score
