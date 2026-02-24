@@ -69,6 +69,22 @@ Alerts are generated only when cumulative risk exceeds defined thresholds to red
 
 ---
 
+## Example Detection Snippet
+
+```spl
+index=internal_email sourcetype=internal_email_live
+| bin _time span=1h
+| stats count AS hourly_count dc(recipient) AS unique_recipients BY sender _time
+| eventstats avg(hourly_count) AS avg_count stdev(hourly_count) AS stdev_count BY sender
+| eval threshold = avg_count + (2 * stdev_count)
+```
+The complete detection logic, including lookup-based relationship modeling and risk scoring, is available in:
+
+`/detections/internal_phishing_behavioral_detection.spl`
+
+
+---
+
 ## Validation Results
 
 The detection model was evaluated using a synthetic internal email dataset containing controlled phishing simulations.
