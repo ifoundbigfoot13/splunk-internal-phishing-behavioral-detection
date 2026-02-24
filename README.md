@@ -101,6 +101,8 @@ The missed detection highlights the tradeoff between sensitivity and alert stabi
 -  Risk scoring model
 
 -  Investigation dashboard (Internal Email Anomaly View)
+   -  A screenshot of the dashboard is available in `/images/dashboard.png`.
+
 
 ### Example Detection Logic (SPL):
 
